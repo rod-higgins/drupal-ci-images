@@ -35,10 +35,6 @@ All images are based on official [docker Drupal](https://github.com/docker-libra
 
 To use with a local Drupal 9/10 managed by Composer, mount your Drupal on `/opt/drupal/`
 
-## Issues
-
-* ...
-
 ## Build
 
 CI variable `CI_DO_RELEASE`, default to `1` to push to Docker hub.
