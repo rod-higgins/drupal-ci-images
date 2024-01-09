@@ -1,0 +1,78 @@
+default:
+  image: docker:latest
+  services:
+    - docker:dind
+  before_script:
+    - docker --version
+    # Pull base image from Docker hub.
+    - docker pull --quiet $IMAGE_BASE || true
+    # Login to Gitlab and pull current image if exist.
+    - echo "$CI_JOB_TOKEN" | docker login registry.gitlab.com --username gitlab-ci-token --password-stdin
+    - docker pull --quiet $CI_REGISTRY_IMAGE/$IMAGE || true
+  artifacts:
+    reports:
+      junit: junit.xml
+
+stages:
+  - build
+
+variables:
+  # Drupal variables.
+  DRUPAL_PREVIOUS: '9.5'
+  DRUPAL_PREVIOUS_PHP: '8.1'
+  DRUPAL_CURRENT: '10.1'
+  DRUPAL_CURRENT_PHP: '8.1'
+  DRUPAL_NEXT: '10.2'
+  DRUPAL_NEXT_PHP: '8.2'
+  # Docker variables.
+  DOCKER_HOST: tcp://docker:2375
+  RELEASE_REGISTRY: docker.io
+  RELEASE_IMAGE: index.docker.io/$RELEASE_USER
+  # Enable buildkit to use '--from-cache' when 'docker build'.
+  DOCKER_BUILDKIT: 1
+  DO_RELEASE:
+    value: "1"
+    description: Publish the image to docker, set 0 to not publish.
+
+.build_test:
+  stage: build
+  script:
+    - docker build
+      --tag $CI_REGISTRY_IMAGE/$IMAGE
+      --tag $RELEASE_IMAGE/$IMAGE
+      --compress
+      $BUILD_DIR
+    - docker images
+    - docker push --quiet $CI_REGISTRY_IMAGE/$IMAGE
+    - if [[ -d ./$BUILD_DIR/tests ]]; then ./.gitlab-ci/run-tests.sh $CI_REGISTRY_IMAGE/$IMAGE; fi;
+    # Login to Docker hub and push.
+    - echo "$RELEASE_PASSWORD" | docker login $RELEASE_REGISTRY --username $RELEASE_USER --password-stdin
+    - docker push --quiet $RELEASE_IMAGE/$IMAGE
+
+previous:
+  extends: .build_test
+  variables:
+    IMAGE_BASE: drupal:${DRUPAL_PREVIOUS}-php${DRUPAL_PREVIOUS_PHP}
+    IMAGE: drupal-ci:${CI_COMMIT_BRANCH}-${DRUPAL_PREVIOUS}
+    BUILD_DIR: '${DRUPAL_PREVIOUS}'
+
+current:
+  extends: .build_test
+  variables:
+    IMAGE_BASE: drupal:${DRUPAL_CURRENT}-php${DRUPAL_CURRENT_PHP}
+    IMAGE: drupal-ci:${CI_COMMIT_BRANCH}-${DRUPAL_CURRENT}
+    BUILD_DIR: '${DRUPAL_CURRENT}'
+
+next:
+  extends: .build_test
+  variables:
+    IMAGE_BASE: drupal:${DRUPAL_NEXT}-php${DRUPAL_NEXT_PHP}
+    IMAGE: drupal-ci:${CI_COMMIT_BRANCH}-${DRUPAL_NEXT}
+    BUILD_DIR: '${DRUPAL_NEXT}'
+
+chrome-headless:
+  extends: .build_test
+  variables:
+    IMAGE_BASE: debian:bullseye-slim
+    IMAGE: chrome-headless:${CI_COMMIT_BRANCH}
+    BUILD_DIR: chrome-headless
